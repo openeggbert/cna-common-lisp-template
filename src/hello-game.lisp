@@ -84,7 +84,7 @@ while rotating and pulsing, and counts every native callback it received."))
             (texture (texture game)))
         (gfx:clear device (xna:cornflower-blue))
         (when (and batch texture)
-          (gfx:begin batch :sort-mode :deferred)
+          (gfx:begin batch)
           (unwind-protect
                (gfx:draw-texture
                 batch texture
