@@ -1,0 +1,6 @@
+*.fasl
+*.fas
+*.lib
+*.o
+.qlot/
+qlfile.lock
