@@ -110,13 +110,14 @@ counts every native callback it received."))
   "Three VertexPositionColor vertices in clip space, in the top-left corner.
 
 Wound so the default CullCounterClockwise keeps it once the viewport transform
-has flipped Y. On an 800x480 window the vertices land at (0,0), (0,144) and
-(240,0), so (40,40) is inside it."
+has flipped Y -- get that backwards and the triangle is culled, the draw still
+succeeds, and the pixel reads back as the clear colour. On an 800x480 window the
+vertices land at (0,0), (240,0) and (0,144), so (40,40) is inside it."
   (vector (gfx:make-vertex-position-color (xna:make-vector3 -1.0 1.0 0.0)
                                           (xna:make-color 255 128 0 255))
-          (gfx:make-vertex-position-color (xna:make-vector3 -1.0 0.4 0.0)
-                                          (xna:make-color 255 128 0 255))
           (gfx:make-vertex-position-color (xna:make-vector3 -0.4 1.0 0.0)
+                                          (xna:make-color 255 128 0 255))
+          (gfx:make-vertex-position-color (xna:make-vector3 -1.0 0.4 0.0)
                                           (xna:make-color 255 128 0 255))))
 
 (defmethod xna:draw ((game hello-game) game-time)
