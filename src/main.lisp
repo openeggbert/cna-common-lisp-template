@@ -60,6 +60,7 @@ current directory."
           (if (texture game)
               (format nil "~dx~d" (gfx:width (texture game)) (gfx:height (texture game)))
               "none"))
+  (format t "CANARY pixels=~a~%" (or (pixels-read game) "not-read"))
   (format t "CANARY draw_failure=~a~%"
           (if (draw-failure game) (one-line (draw-failure game)) "none"))
   (format t "CANARY disposed=~a~%" (if (resources-disposed-p game) "yes" "no"))

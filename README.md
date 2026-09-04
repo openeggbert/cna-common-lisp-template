@@ -23,19 +23,30 @@ In interactive mode it exits on Escape.
 * a project-owned PNG becomes a real native `Texture2D` whose extent is reported
   back;
 * a real `SpriteBatch` accepts a textured draw with rotation, origin, scale, tint
-  and layer depth;
+  and layer depth, inside the **five-parameter `Begin`** — a sort mode and four
+  state objects, two of them built by this program and two of them XNA's
+  predefined ones;
+* a `BlendState` and a `SamplerState` are built once in `load-content` and not
+  per frame, because a state object becomes permanently read-only the moment it
+  is applied and one rebuilt every frame is one thrown away every frame;
 * the graphics device is reachable from inside a lifecycle method and answers its
   renderer and viewport;
 * every resource is disposed, children before parent, through `unwind-protect`,
   and `disposed-p` says so afterwards;
 * `--frames 60` delivers exactly 60 updates and 60 draws, and `--frames 600`
-  delivers exactly 600 of each — a run that does not is a failure, not a warning.
+  delivers exactly 600 of each — a run that does not is a failure, not a warning;
+* **whether anything reached pixels, where the renderer can say.** After the
+  clear, one pixel of the back buffer is read back. Under `HEADLESS` there is no
+  back buffer to read and CNA refuses, which the canary reports as
+  `CANARY pixels=not-supported` — the honest answer, not a failure. Under a
+  rasterising renderer such as `SOFTWARE` it reports the colour, and
+  `CANARY pixels=100,149,237,255` is CornflowerBlue, which is what was cleared.
 
 **Does not prove**:
 
-* **anything about pixels.** The qualified renderer is `HEADLESS`. "Drew the
-  sprite" here means the draw was submitted and the renderer accepted it. There
-  is no visible-rendering claim and no rasterisation readback.
+* **anything about a physical display.** A back buffer is a back buffer. Under
+  `HEADLESS` there is not even that, and "drew the sprite" means the draw was
+  submitted and the renderer accepted it.
 * anything about a window, a display server, or a real keyboard, in
   `--frames` mode: that mode never reads the keyboard, deliberately, because a
   key press would change the frame count.
@@ -83,6 +94,7 @@ CANARY unloads=1
 CANARY renderer=HEADLESS
 CANARY viewport=800x480
 CANARY texture=96x96
+CANARY pixels=not-supported
 CANARY draw_failure=none
 CANARY disposed=yes
 CANARY result=pass

@@ -25,6 +25,12 @@
    (initialize-count :initform 0 :accessor initialize-count)
    (renderer         :initform nil :accessor renderer)
    (viewport-size    :initform nil :accessor viewport-size)
+   ;; The blend state the sprite is drawn with, built once rather than per frame:
+   ;; XNA makes a state object read-only the moment it is applied, so one that is
+   ;; rebuilt every frame is one that is thrown away every frame.
+   (blend-state      :initform nil :accessor blend-state-of)
+   (sampler-state    :initform nil :accessor sampler-state-of)
+   (pixels-read      :initform nil :accessor pixels-read)
    (interactive      :initarg :interactive :initform nil :reader interactive-p)
    (draw-failure     :initform nil :accessor draw-failure))
   (:documentation
@@ -49,7 +55,20 @@ while rotating and pulsing, and counts every native callback it received."))
             (cons (gfx:viewport-width viewport) (gfx:viewport-height viewport))))
     (setf (texture game) (gfx:texture-2d-from-png-file device (content-path game))
           (sprite-batch game) (make-instance 'gfx:sprite-batch
-                                             :graphics-device device))))
+                                             :graphics-device device))
+    ;; Built once, here, and not per frame. A state object becomes permanently
+    ;; read-only the moment it is applied -- that is XNA's rule, not this
+    ;; binding's -- so one built inside DRAW would be a new object every frame
+    ;; and the old one would be garbage after its first use.
+    (setf (blend-state-of game) (make-instance 'gfx:blend-state)
+          (sampler-state-of game) (make-instance 'gfx:sampler-state))
+    (setf (gfx:color-source-blend (blend-state-of game)) :source-alpha
+          (gfx:color-destination-blend (blend-state-of game)) :inverse-source-alpha
+          (gfx:alpha-source-blend (blend-state-of game)) :one
+          (gfx:alpha-destination-blend (blend-state-of game)) :inverse-source-alpha
+          (gfx:filter (sampler-state-of game)) :linear
+          (gfx:address-u (sampler-state-of game)) :clamp
+          (gfx:address-v (sampler-state-of game)) :clamp)))
 
 (defmethod xna:unload-content ((game hello-game))
   (incf (unload-count game)))
@@ -83,8 +102,30 @@ while rotating and pulsing, and counts every native callback it received."))
             (batch (sprite-batch game))
             (texture (texture game)))
         (gfx:clear device (xna:cornflower-blue))
+        ;; Where a renderer can answer, read one pixel of what was just cleared.
+        ;; A Headless renderer refuses -- it has no back buffer to read -- and
+        ;; that refusal is the honest answer, so it is recorded rather than
+        ;; treated as a failure. `CANARY pixels=' says which happened.
+        (unless (pixels-read game)
+          (setf (pixels-read game)
+                (handler-case
+                    (let ((pixel (aref (gfx:get-back-buffer-data
+                                        device :source (xna:make-rectangle 0 0 1 1))
+                                       0)))
+                      (format nil "~d,~d,~d,~d"
+                              (xna:color-r pixel) (xna:color-g pixel)
+                              (xna:color-b pixel) (xna:color-a pixel)))
+                  (xna:cna-not-supported-error () "not-supported"))))
         (when (and batch texture)
-          (gfx:begin batch)
+          ;; The five-parameter Begin, with the state objects the sprite is drawn
+          ;; under. XNA's other two Begin shapes take an Effect, which CNA-Lisp
+          ;; does not have yet and does not pretend to.
+          (gfx:begin batch
+                     :sort-mode :deferred
+                     :blend-state (blend-state-of game)
+                     :sampler-state (sampler-state-of game)
+                     :depth-stencil-state (gfx:depth-stencil-state-none)
+                     :rasterizer-state (gfx:rasterizer-state-cull-counter-clockwise))
           (unwind-protect
                (gfx:draw-texture
                 batch texture
