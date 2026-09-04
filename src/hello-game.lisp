@@ -30,12 +30,17 @@
    ;; rebuilt every frame is one that is thrown away every frame.
    (blend-state      :initform nil :accessor blend-state-of)
    (sampler-state    :initform nil :accessor sampler-state-of)
+   ;; The stock effect the triangle is drawn with. Built once, in LOAD-CONTENT,
+   ;; because it is a GraphicsResource with a native lifetime like any other.
+   (effect           :initform nil :accessor effect-of)
    (pixels-read      :initform nil :accessor pixels-read)
+   (triangle-pixel   :initform nil :accessor triangle-pixel)
    (interactive      :initarg :interactive :initform nil :reader interactive-p)
    (draw-failure     :initform nil :accessor draw-failure))
   (:documentation
-   "The template's game. It draws one sprite that moves along a Lissajous path
-while rotating and pulsing, and counts every native callback it received."))
+   "The template's game. It draws one primitive triangle through a BasicEffect and
+one sprite that moves along a Lissajous path while rotating and pulsing, and
+counts every native callback it received."))
 
 (defmethod initialize-instance :after ((game hello-game) &key)
   ;; XNA constructs the graphics device manager in the game's constructor, and so
@@ -68,7 +73,14 @@ while rotating and pulsing, and counts every native callback it received."))
           (gfx:alpha-destination-blend (blend-state-of game)) :inverse-source-alpha
           (gfx:filter (sampler-state-of game)) :linear
           (gfx:address-u (sampler-state-of game)) :clamp
-          (gfx:address-v (sampler-state-of game)) :clamp)))
+          (gfx:address-v (sampler-state-of game)) :clamp)
+    ;; A stock effect, so the game can draw a primitive as well as a sprite. XNA
+    ;; refuses a primitive draw with no current Effect -- that is
+    ;; GraphicsDevice.VerifyCanDraw -- and CNA refuses it too, so this is not
+    ;; optional decoration.
+    (setf (effect-of game) (make-instance 'gfx:basic-effect :graphics-device device)
+          (gfx:effect-vertex-color-enabled (effect-of game)) t
+          (gfx:effect-lighting-enabled (effect-of game)) nil)))
 
 (defmethod xna:unload-content ((game hello-game))
   (incf (unload-count game)))
@@ -94,6 +106,19 @@ while rotating and pulsing, and counts every native callback it received."))
     (when (input:is-key-down (input:keyboard-get-state) :escape)
       (xna:exit game))))
 
+(defun corner-triangle ()
+  "Three VertexPositionColor vertices in clip space, in the top-left corner.
+
+Wound so the default CullCounterClockwise keeps it once the viewport transform
+has flipped Y. On an 800x480 window the vertices land at (0,0), (0,144) and
+(240,0), so (40,40) is inside it."
+  (vector (gfx:make-vertex-position-color (xna:make-vector3 -1.0 1.0 0.0)
+                                          (xna:make-color 255 128 0 255))
+          (gfx:make-vertex-position-color (xna:make-vector3 -1.0 0.4 0.0)
+                                          (xna:make-color 255 128 0 255))
+          (gfx:make-vertex-position-color (xna:make-vector3 -0.4 1.0 0.0)
+                                          (xna:make-color 255 128 0 255))))
+
 (defmethod xna:draw ((game hello-game) game-time)
   (declare (ignore game-time))
   (incf (draw-count game))
@@ -116,10 +141,35 @@ while rotating and pulsing, and counts every native callback it received."))
                               (xna:color-r pixel) (xna:color-g pixel)
                               (xna:color-b pixel) (xna:color-a pixel)))
                   (xna:cna-not-supported-error () "not-supported"))))
+        ;; A primitive, through the effect. The vertices are in clip space --
+        ;; BasicEffect's World, View and Projection start at the identity -- and
+        ;; the triangle sits in the top-left corner so the sprite has the rest of
+        ;; the window to move around in.
+        (when (effect-of game)
+          (dolist (pass (gfx:collection-elements
+                         (gfx:effect-technique-passes
+                          (gfx:effect-current-technique (effect-of game)))))
+            (gfx:apply-effect-pass pass))
+          (gfx:draw-user-primitives device :triangle-list (corner-triangle)
+                                    :primitive-count 1)
+          ;; And read one pixel of it back, where the renderer can. This is the
+          ;; consumer's own evidence that the primitive reached the back buffer,
+          ;; obtained through nothing but the public API.
+          (unless (triangle-pixel game)
+            (setf (triangle-pixel game)
+                  (handler-case
+                      (let ((pixel (aref (gfx:get-back-buffer-data
+                                          device
+                                          :source (xna:make-rectangle 40 40 1 1))
+                                         0)))
+                        (format nil "~d,~d,~d,~d"
+                                (xna:color-r pixel) (xna:color-g pixel)
+                                (xna:color-b pixel) (xna:color-a pixel)))
+                    (xna:cna-not-supported-error () "not-supported")))))
         (when (and batch texture)
           ;; The five-parameter Begin, with the state objects the sprite is drawn
-          ;; under. XNA's other two Begin shapes take an Effect, which CNA-Lisp
-          ;; does not have yet and does not pretend to.
+          ;; under. The two that take an Effect exist as well; the sprite wants
+          ;; the stock sprite effect, which is what leaving :EFFECT out selects.
           (gfx:begin batch
                      :sort-mode :deferred
                      :blend-state (blend-state-of game)
@@ -149,6 +199,8 @@ while rotating and pulsing, and counts every native callback it received."))
 CNA destroys children before their parent and refuses the other order, and
 CNA-Lisp refuses it one step earlier with a diagnosable condition. So the order
 here is not a style preference."
+  (when (effect-of game)
+    (xna:dispose (effect-of game)))
   (when (sprite-batch game)
     (xna:dispose (sprite-batch game)))
   (when (texture game)
@@ -162,7 +214,8 @@ here is not a style preference."
 
 Asked entirely through the public API: DISPOSED-P is the question CNA-Lisp
 offers, and a consumer needs no more than that to know it left nothing alive."
-  (and (or (null (sprite-batch game)) (xna:disposed-p (sprite-batch game)))
+  (and (or (null (effect-of game)) (xna:disposed-p (effect-of game)))
+       (or (null (sprite-batch game)) (xna:disposed-p (sprite-batch game)))
        (or (null (texture game)) (xna:disposed-p (texture game)))
        (or (null (graphics-manager game)) (xna:disposed-p (graphics-manager game)))
        (xna:disposed-p game)))
