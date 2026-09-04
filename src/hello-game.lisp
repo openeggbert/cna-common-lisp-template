@@ -35,6 +35,11 @@
    (effect           :initform nil :accessor effect-of)
    (pixels-read      :initform nil :accessor pixels-read)
    (triangle-pixel   :initform nil :accessor triangle-pixel)
+   ;; A render target: a Texture2D the game draws *into*, and then draws onto the
+   ;; screen like any other texture. Built once, in LOAD-CONTENT, because it is a
+   ;; GraphicsResource with a native lifetime.
+   (render-target    :initform nil :accessor render-target-of)
+   (render-target-pixel :initform nil :accessor render-target-pixel)
    (interactive      :initarg :interactive :initform nil :reader interactive-p)
    (draw-failure     :initform nil :accessor draw-failure))
   (:documentation
@@ -80,7 +85,12 @@ counts every native callback it received."))
     ;; optional decoration.
     (setf (effect-of game) (make-instance 'gfx:basic-effect :graphics-device device)
           (gfx:effect-vertex-color-enabled (effect-of game)) t
-          (gfx:effect-lighting-enabled (effect-of game)) nil)))
+          (gfx:effect-lighting-enabled (effect-of game)) nil)
+    ;; A 32x32 render target. Nothing here is special: it is made against the
+    ;; device like a texture, disposed like one, and drawn like one.
+    (setf (render-target-of game)
+          (make-instance 'gfx:render-target-2d :graphics-device device
+                                               :width 32 :height 32))))
 
 (defmethod xna:unload-content ((game hello-game))
   (incf (unload-count game)))
@@ -167,6 +177,15 @@ vertices land at (0,0), (240,0) and (0,144), so (40,40) is inside it."
                                 (xna:color-r pixel) (xna:color-g pixel)
                                 (xna:color-b pixel) (xna:color-a pixel)))
                     (xna:cna-not-supported-error () "not-supported")))))
+        ;; Draw into the render target, then put the target on the screen. The
+        ;; whole point of a render target is that what goes into it is not on the
+        ;; screen until the game puts it there, so this clears it to a colour
+        ;; nothing else in the frame uses.
+        (when (render-target-of game)
+          (gfx:set-render-target device (render-target-of game))
+          (gfx:clear device (xna:make-color 0 200 90 255))
+          ;; NIL is XNA's SetRenderTarget(null): back to the back buffer.
+          (gfx:set-render-target device nil))
         (when (and batch texture)
           ;; The five-parameter Begin, with the state objects the sprite is drawn
           ;; under. The two that take an Effect exist as well; the sprite wants
@@ -188,7 +207,27 @@ vertices land at (0,0), (240,0) and (0,144), so (40,40) is inside it."
                 :scale (scale game)
                 :effects :none
                 :layer-depth 0.0f0)
-            (gfx:end batch))))
+            ;; The render target, drawn as the ordinary texture it is, in the
+            ;; bottom-left corner where nothing else goes.
+            (when (render-target-of game)
+              (gfx:draw-texture batch (render-target-of game)
+                                :destination (xna:make-rectangle 16 400 32 32)
+                                :color (xna:white)))
+            (gfx:end batch))
+          ;; And read one pixel of it back, where the renderer can. Evidence, from
+          ;; the consumer's side and through nothing but the public API, that the
+          ;; target kept what was drawn into it and reached the screen.
+          (unless (render-target-pixel game)
+            (setf (render-target-pixel game)
+                  (handler-case
+                      (let ((pixel (aref (gfx:get-back-buffer-data
+                                          device
+                                          :source (xna:make-rectangle 30 414 1 1))
+                                         0)))
+                        (format nil "~d,~d,~d,~d"
+                                (xna:color-r pixel) (xna:color-g pixel)
+                                (xna:color-b pixel) (xna:color-a pixel)))
+                    (xna:cna-not-supported-error () "not-supported"))))))
     ;; A condition raised here would be contained by CNA-Lisp and re-signalled
     ;; after the frame; catching it makes the canary report it instead of dying
     ;; halfway through a run.
@@ -200,6 +239,8 @@ vertices land at (0,0), (240,0) and (0,144), so (40,40) is inside it."
 CNA destroys children before their parent and refuses the other order, and
 CNA-Lisp refuses it one step earlier with a diagnosable condition. So the order
 here is not a style preference."
+  (when (render-target-of game)
+    (xna:dispose (render-target-of game)))
   (when (effect-of game)
     (xna:dispose (effect-of game)))
   (when (sprite-batch game)
@@ -215,7 +256,8 @@ here is not a style preference."
 
 Asked entirely through the public API: DISPOSED-P is the question CNA-Lisp
 offers, and a consumer needs no more than that to know it left nothing alive."
-  (and (or (null (effect-of game)) (xna:disposed-p (effect-of game)))
+  (and (or (null (render-target-of game)) (xna:disposed-p (render-target-of game)))
+       (or (null (effect-of game)) (xna:disposed-p (effect-of game)))
        (or (null (sprite-batch game)) (xna:disposed-p (sprite-batch game)))
        (or (null (texture game)) (xna:disposed-p (texture game)))
        (or (null (graphics-manager game)) (xna:disposed-p (graphics-manager game)))

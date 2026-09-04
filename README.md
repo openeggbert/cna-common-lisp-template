@@ -6,9 +6,10 @@ that says whether the binding still works.
 It is a game: it subclasses the public CLOS `game` class, constructs a graphics
 device manager, overrides the lifecycle generic functions, decodes its own PNG
 into a real `Texture2D`, creates a real `SpriteBatch` and a real `BasicEffect`,
-clears to Cornflower Blue, draws one primitive triangle through the effect, and
-draws the sprite moving along a Lissajous path while it rotates and pulses. In
-interactive mode it exits on Escape.
+clears to Cornflower Blue, draws one primitive triangle through the effect, draws
+into a `RenderTarget2D` and then draws that target onto the screen, and draws the
+sprite moving along a Lissajous path while it rotates and pulses. In interactive
+mode it exits on Escape.
 
 [binding]: https://github.com/openeggbert/cna-common-lisp
 
@@ -32,6 +33,10 @@ interactive mode it exits on Escape.
   is not decoration: XNA refuses a primitive draw with no current effect
   (`GraphicsDevice.VerifyCanDraw`) and so does CNA, so a consumer that draws a
   primitive has to hold an effect and apply a pass, all through the public API;
+* a `RenderTarget2D` is created, bound with `set-render-target`, cleared to a
+  colour nothing else in the frame uses, unbound by passing `nil` — which is
+  XNA's `SetRenderTarget(null)` — and then drawn onto the back buffer as the
+  ordinary `Texture2D` it is. A consumer needs nothing private to do that;
 * a `BlendState` and a `SamplerState` are built once in `load-content` and not
   per frame, because a state object becomes permanently read-only the moment it
   is applied and one rebuilt every frame is one thrown away every frame;
@@ -52,6 +57,11 @@ interactive mode it exits on Escape.
   primitive really reached the back buffer. It has to check the *colour* and not
   merely that a pixel was read — a triangle wound the wrong way is culled, the
   draw still succeeds, and the pixel reads back as the clear colour.
+  `CANARY render_target_pixel=0,200,90,255` is the third of these and the most
+  particular: that colour exists nowhere in the frame except inside the render
+  target, so reading it back from the screen says the target was bound, kept what
+  was cleared into it, survived the unbind, and was sampled as a texture — the
+  whole round trip, from the consumer's side.
 
 **Does not prove**:
 
