@@ -42,6 +42,15 @@ current directory."
   (namestring (asdf:system-relative-pathname "cna-common-lisp-template"
                                              "Content/logo.png")))
 
+(defun content-directory ()
+  "The ContentManager root, resolved next to this system for the same reason.
+
+An XNA program says `Content.RootDirectory = \"Content\"' and gets away with a
+relative path because the runtime sets the working directory to the game's own.
+Nothing sets it here -- `run.lisp' is run from wherever the operator happens to
+be standing -- so the path is resolved rather than assumed."
+  (namestring (asdf:system-relative-pathname "cna-common-lisp-template" "Content/")))
+
 (defun print-counters (game frames mode)
   "One machine-readable line per counter. Meant to be grepped, not read aloud."
   (format t "~&CANARY mode=~a~%" mode)
@@ -78,6 +87,7 @@ Answers the game. Signals CANARY-FAILURE when the counts disagree with the
 request, when drawing failed, or when anything was left undisposed."
   (check-type frames (integer 1))
   (let ((game (make-instance 'hello-game :content-path content
+                                         :content-root (content-directory)
                                          :window-title "CNA-Lisp template canary"))
         (run-failure nil))
     ;; The counters are printed *after* disposal, because unload-content and the
@@ -125,6 +135,7 @@ request, when drawing failed, or when anything was left undisposed."
 (defun run-interactive (&key (content (content-file)))
   "Run until Escape is pressed or the window is closed."
   (let ((game (make-instance 'hello-game :content-path content
+                                         :content-root (content-directory)
                                          :interactive t
                                          :window-title "CNA-Lisp template")))
     (unwind-protect (xna:run game)
