@@ -42,8 +42,12 @@ mode it exits on Escape.
   is applied and one rebuilt every frame is one thrown away every frame;
 * the graphics device is reachable from inside a lifecycle method and answers its
   renderer and viewport;
-* every resource is disposed, children before parent, through `unwind-protect`,
-  and `disposed-p` says so afterwards;
+* every resource is released, children before parent, through `unwind-protect`,
+  and `disposed-p` says so afterwards — **content through
+  `ContentManager.Unload`, everything else by hand**, which is the division XNA
+  draws: `Unload` disposes every asset the manager loaded, in the order they have
+  to go, so a program never has to know that a `SpriteFont` must be disposed
+  before the atlas it draws from;
 * `--frames 60` delivers exactly 60 updates and 60 draws, and `--frames 600`
   delivers exactly 600 of each — a run that does not is a failure, not a warning;
 * **whether anything reached pixels, where the renderer can say.** After the

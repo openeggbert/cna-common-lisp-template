@@ -286,17 +286,19 @@ vertices land at (0,0), (240,0) and (0,144), so (40,40) is inside it."
     (error (condition) (setf (draw-failure game) condition))))
 
 (defun dispose-everything (game)
-  "Dispose the game's resources, children before parent, whatever happened.
+  "Release the game's resources, children before parent, whatever happened.
 
 CNA destroys children before their parent and refuses the other order, and
 CNA-Lisp refuses it one step earlier with a diagnosable condition. So the order
-here is not a style preference."
-  ;; The font before its atlas: a SpriteFont keeps the texture it draws from
-  ;; alive, and CNA refuses to destroy the atlas while the font exists.
-  (when (font-of game)
-    (xna:dispose (font-of game)))
-  (when (font-atlas-of game)
-    (xna:dispose (font-atlas-of game)))
+here is not a style preference.
+
+**Content goes back through the content manager, and everything else by hand.**
+That is the division XNA draws and it is the one worth learning: `Unload'
+disposes every asset the manager loaded, in the order they have to go -- a
+SpriteFont before the atlas it draws from -- so a program that loads its content
+through `Game.Content' never has to know that ordering. What this game
+*constructed* is its own to dispose, and is disposed below."
+  (content:unload (xna:content game))
   (when (render-target-of game)
     (xna:dispose (render-target-of game)))
   (when (effect-of game)
@@ -313,7 +315,11 @@ here is not a style preference."
   "True when every resource this game made has been disposed.
 
 Asked entirely through the public API: DISPOSED-P is the question CNA-Lisp
-offers, and a consumer needs no more than that to know it left nothing alive."
+offers, and a consumer needs no more than that to know it left nothing alive.
+
+The font and its atlas are in this list and are **not** disposed by hand
+anywhere: `Unload' is what disposed them, so this asserting them disposed is the
+canary's evidence that it did."
   (and (or (null (font-of game)) (xna:disposed-p (font-of game)))
        (or (null (font-atlas-of game)) (xna:disposed-p (font-atlas-of game)))
        (or (null (render-target-of game)) (xna:disposed-p (render-target-of game)))
