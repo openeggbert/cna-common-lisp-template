@@ -5,9 +5,10 @@ that says whether the binding still works.
 
 It is a game: it subclasses the public CLOS `game` class, constructs a graphics
 device manager, overrides the lifecycle generic functions, decodes its own PNG
-into a real `Texture2D`, creates a real `SpriteBatch`, clears to Cornflower Blue,
-and draws the sprite moving along a Lissajous path while it rotates and pulses.
-In interactive mode it exits on Escape.
+into a real `Texture2D`, creates a real `SpriteBatch` and a real `BasicEffect`,
+clears to Cornflower Blue, draws one primitive triangle through the effect, and
+draws the sprite moving along a Lissajous path while it rotates and pulses. In
+interactive mode it exits on Escape.
 
 [binding]: https://github.com/openeggbert/cna-common-lisp
 
@@ -26,6 +27,11 @@ In interactive mode it exits on Escape.
   and layer depth, inside the **five-parameter `Begin`** — a sort mode and four
   state objects, two of them built by this program and two of them XNA's
   predefined ones;
+* a real `BasicEffect` is created, its current technique's passes are applied
+  through the collection API, and a `DrawUserPrimitives` triangle is drawn — which
+  is not decoration: XNA refuses a primitive draw with no current effect
+  (`GraphicsDevice.VerifyCanDraw`) and so does CNA, so a consumer that draws a
+  primitive has to hold an effect and apply a pass, all through the public API;
 * a `BlendState` and a `SamplerState` are built once in `load-content` and not
   per frame, because a state object becomes permanently read-only the moment it
   is applied and one rebuilt every frame is one thrown away every frame;
@@ -41,6 +47,11 @@ In interactive mode it exits on Escape.
   `CANARY pixels=not-supported` — the honest answer, not a failure. Under a
   rasterising renderer such as `SOFTWARE` it reports the colour, and
   `CANARY pixels=100,149,237,255` is CornflowerBlue, which is what was cleared.
+  `CANARY triangle_pixel=` does the same for a point inside the triangle:
+  `255,128,0,255` is the triangle's own vertex colour, so the line says the
+  primitive really reached the back buffer. It has to check the *colour* and not
+  merely that a pixel was read — a triangle wound the wrong way is culled, the
+  draw still succeeds, and the pixel reads back as the clear colour.
 
 **Does not prove**:
 
