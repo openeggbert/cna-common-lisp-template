@@ -64,6 +64,8 @@ current directory."
   (format t "CANARY triangle_pixel=~a~%" (or (triangle-pixel game) "not-read"))
   (format t "CANARY render_target_pixel=~a~%"
           (or (render-target-pixel game) "not-read"))
+  (format t "CANARY font=~a~%" (or (font-description game) "none"))
+  (format t "CANARY text_pixel=~a~%" (or (text-pixel game) "not-read"))
   (format t "CANARY draw_failure=~a~%"
           (if (draw-failure game) (one-line (draw-failure game)) "none"))
   (format t "CANARY disposed=~a~%" (if (resources-disposed-p game) "yes" "no"))

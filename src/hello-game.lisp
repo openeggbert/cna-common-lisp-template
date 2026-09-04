@@ -40,6 +40,18 @@
    ;; GraphicsResource with a native lifetime.
    (render-target    :initform nil :accessor render-target-of)
    (render-target-pixel :initform nil :accessor render-target-pixel)
+   ;; A SpriteFont and the atlas it draws from, both loaded through the game's own
+   ;; ContentManager. A font is the one asset a program cannot construct from
+   ;; arguments -- it is glyph metrics plus a texture, and both have to come from
+   ;; somewhere -- so this is also the template's only use of the content pipeline.
+   (font             :initform nil :accessor font-of)
+   (font-atlas       :initform nil :accessor font-atlas-of)
+   (content-root     :initarg :content-root :initform "Content" :reader content-root)
+   ;; Described while the font is alive. The canary prints after everything has
+   ;; been disposed, and asking a disposed SpriteFont for its glyphs is refused --
+   ;; correctly, and it is the caller's job not to ask.
+   (font-description :initform nil :accessor font-description)
+   (text-pixel       :initform nil :accessor text-pixel)
    (interactive      :initarg :interactive :initform nil :reader interactive-p)
    (draw-failure     :initform nil :accessor draw-failure))
   (:documentation
@@ -90,7 +102,22 @@ counts every native callback it received."))
     ;; device like a texture, disposed like one, and drawn like one.
     (setf (render-target-of game)
           (make-instance 'gfx:render-target-2d :graphics-device device
-                                               :width 32 :height 32))))
+                                               :width 32 :height 32))
+    ;; The font, through the game's own content manager. `Load<SpriteFont>' is
+    ;; MULTIPLE-VALUE-BIND here because CNA hands back the atlas as well as the
+    ;; font: a SpriteFont *is* metrics plus a texture, and both are owned
+    ;; resources this game has to dispose. Content/font.cnj describes it, and
+    ;; tools/qualification/make-font-fixture.py in the binding's repository is
+    ;; what produced the pair.
+    (let ((content (xna:content game)))
+      (setf (content:root-directory content) (content-root game))
+      (multiple-value-bind (font atlas)
+          (content:load-asset content 'gfx:sprite-font "font")
+        (setf (font-of game) font
+              (font-atlas-of game) atlas
+              (font-description game)
+              (format nil "~d glyphs, line-spacing ~d"
+                      (length (gfx:characters font)) (gfx:line-spacing font)))))))
 
 (defmethod xna:unload-content ((game hello-game))
   (incf (unload-count game)))
@@ -213,6 +240,17 @@ vertices land at (0,0), (240,0) and (0,144), so (40,40) is inside it."
               (gfx:draw-texture batch (render-target-of game)
                                 :destination (xna:make-rectangle 16 400 32 32)
                                 :color (xna:white)))
+            ;; Text, in the same batch as everything else -- DrawString is a
+            ;; SpriteBatch operation and obeys the same Begin/End discipline as a
+            ;; sprite draw, because in XNA it *is* a sprite draw.
+            (when (font-of game)
+              (gfx:draw-string batch (font-of game) "CNA-Lisp"
+                               :position (xna:make-vector2 16.0 16.0)
+                               :color (xna:white))
+              (gfx:draw-string batch (font-of game)
+                               (format nil "frame ~d" (draw-count game))
+                               :position (xna:make-vector2 16.0 40.0)
+                               :color (xna:make-color 255 220 0 255)))
             (gfx:end batch))
           ;; And read one pixel of it back, where the renderer can. Evidence, from
           ;; the consumer's side and through nothing but the public API, that the
@@ -223,6 +261,20 @@ vertices land at (0,0), (240,0) and (0,144), so (40,40) is inside it."
                       (let ((pixel (aref (gfx:get-back-buffer-data
                                           device
                                           :source (xna:make-rectangle 30 414 1 1))
+                                         0)))
+                        (format nil "~d,~d,~d,~d"
+                                (xna:color-r pixel) (xna:color-g pixel)
+                                (xna:color-b pixel) (xna:color-a pixel)))
+                    (xna:cna-not-supported-error () "not-supported"))))
+          ;; One pixel inside the 'C' of "CNA-Lisp", drawn white on cornflower
+          ;; blue at (16,16). Evidence from the consumer's side that a font it
+          ;; *loaded* put glyphs on the screen -- not that DrawString was called.
+          (unless (text-pixel game)
+            (setf (text-pixel game)
+                  (handler-case
+                      (let ((pixel (aref (gfx:get-back-buffer-data
+                                          device
+                                          :source (xna:make-rectangle 18 24 1 1))
                                          0)))
                         (format nil "~d,~d,~d,~d"
                                 (xna:color-r pixel) (xna:color-g pixel)
@@ -239,6 +291,12 @@ vertices land at (0,0), (240,0) and (0,144), so (40,40) is inside it."
 CNA destroys children before their parent and refuses the other order, and
 CNA-Lisp refuses it one step earlier with a diagnosable condition. So the order
 here is not a style preference."
+  ;; The font before its atlas: a SpriteFont keeps the texture it draws from
+  ;; alive, and CNA refuses to destroy the atlas while the font exists.
+  (when (font-of game)
+    (xna:dispose (font-of game)))
+  (when (font-atlas-of game)
+    (xna:dispose (font-atlas-of game)))
   (when (render-target-of game)
     (xna:dispose (render-target-of game)))
   (when (effect-of game)
@@ -256,7 +314,9 @@ here is not a style preference."
 
 Asked entirely through the public API: DISPOSED-P is the question CNA-Lisp
 offers, and a consumer needs no more than that to know it left nothing alive."
-  (and (or (null (render-target-of game)) (xna:disposed-p (render-target-of game)))
+  (and (or (null (font-of game)) (xna:disposed-p (font-of game)))
+       (or (null (font-atlas-of game)) (xna:disposed-p (font-atlas-of game)))
+       (or (null (render-target-of game)) (xna:disposed-p (render-target-of game)))
        (or (null (effect-of game)) (xna:disposed-p (effect-of game)))
        (or (null (sprite-batch game)) (xna:disposed-p (sprite-batch game)))
        (or (null (texture game)) (xna:disposed-p (texture game)))
