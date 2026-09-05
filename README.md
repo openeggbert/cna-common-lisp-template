@@ -5,11 +5,12 @@ that says whether the binding still works.
 
 It is a game: it subclasses the public CLOS `game` class, constructs a graphics
 device manager, overrides the lifecycle generic functions, decodes its own PNG
-into a real `Texture2D`, creates a real `SpriteBatch` and a real `BasicEffect`,
-clears to Cornflower Blue, draws one primitive triangle through the effect, draws
-into a `RenderTarget2D` and then draws that target onto the screen, and draws the
-sprite moving along a Lissajous path while it rotates and pulses. In interactive
-mode it exits on Escape.
+into a real `Texture2D`, loads a real `SpriteFont` through `Game.Content`,
+creates a real `SpriteBatch` and a real `BasicEffect`, clears to Cornflower Blue,
+draws one primitive triangle through the effect, draws into a `RenderTarget2D`
+and then draws that target onto the screen, draws a string with the loaded font,
+and draws the sprite moving along a Lissajous path while it rotates and pulses.
+In interactive mode it exits on Escape.
 
 [binding]: https://github.com/openeggbert/cna-common-lisp
 
@@ -42,6 +43,14 @@ mode it exits on Escape.
   is applied and one rebuilt every frame is one thrown away every frame;
 * the graphics device is reachable from inside a lifecycle method and answers its
   renderer and viewport;
+* **a `SpriteFont` is obtained through the public content path and draws.**
+  `Game.Content` resolves an asset root, `load-asset` is XNA's
+  `Load<SpriteFont>`, and the font that comes back reports its glyph count and
+  line spacing as `CANARY font=95 glyphs, line-spacing 19`. There is no
+  test-only producer available to a consumer -- the binding does not export one --
+  so a template that draws text is proving the content path and not a shortcut
+  around it. `CANARY text_pixel=` reads a pixel inside the drawn string where the
+  renderer can;
 * every resource is released, children before parent, through `unwind-protect`,
   and `disposed-p` says so afterwards — **content through
   `ContentManager.Unload`, everything else by hand**, which is the division XNA
@@ -75,8 +84,13 @@ mode it exits on Escape.
 * anything about a window, a display server, or a real keyboard, in
   `--frames` mode: that mode never reads the keyboard, deliberately, because a
   key press would change the frame count.
-* anything about audio, content pipelines, 3D, or any XNA surface CNA-Lisp does
-  not implement. See the binding's `docs/compatibility.md`.
+* anything about audio, 3D, or any XNA surface CNA-Lisp does not implement. See
+  the binding's `docs/compatibility.md`. **Content is no longer on that list**:
+  this template loads a `SpriteFont` through `Game.Content` and releases it
+  through `ContentManager.Unload`, so the content path is one of the things it
+  does prove. What it does not prove is the *XNA content pipeline* -- there is no
+  `.xnb` here and no build-time asset compilation; CNA reads its own `.cnj`
+  descriptor, and `CANARY font=` reports what came back.
 
 ## Running it
 
@@ -120,10 +134,29 @@ CANARY renderer=HEADLESS
 CANARY viewport=800x480
 CANARY texture=96x96
 CANARY pixels=not-supported
+CANARY triangle_pixel=not-supported
+CANARY render_target_pixel=not-supported
+CANARY font=95 glyphs, line-spacing 19
+CANARY text_pixel=not-supported
 CANARY draw_failure=none
 CANARY disposed=yes
 CANARY result=pass
 ```
+
+That is a `HEADLESS` run, where the four pixel lines report `not-supported`
+because there is no back buffer to read and CNA refuses rather than answering
+zeroes. Under `SOFTWARE` the same run reports colours instead:
+
+```text
+CANARY pixels=100,149,237,255
+CANARY triangle_pixel=255,128,0,255
+CANARY render_target_pixel=0,200,90,255
+CANARY text_pixel=255,232,211,255
+```
+
+`tools/audit-canary-fields.sh` checks that every field the program emits is
+listed above, because the list had already fallen four fields behind the
+program.
 
 The counters are printed **after** disposal, because `unload-content` and the
 disposal itself are part of what is being measured. The exit code is 0 for
